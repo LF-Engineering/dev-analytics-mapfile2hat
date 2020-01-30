@@ -7,6 +7,7 @@ import (
 	"os"
 	"regexp"
 	"runtime/debug"
+	"sort"
 	"strings"
 	"time"
 
@@ -26,11 +27,13 @@ func fatalf(f string, a ...interface{}) {
 	fatalOnError(fmt.Errorf(f, a...))
 }
 
-func readMailMapFile(fn string) (ret [2]map[string]map[string]struct{}) {
+func readMailMapFile(fn string) (ret [3]map[string]map[string]struct{}) {
 	// names -> emails
 	ret[0] = make(map[string]map[string]struct{})
 	// emails -> names
 	ret[1] = make(map[string]map[string]struct{})
+	// correlations
+	ret[2] = make(map[string]map[string]struct{})
 	f, err := os.Open(fn)
 	fatalOnError(err)
 	defer func() {
@@ -103,6 +106,46 @@ func readMailMapFile(fn string) (ret [2]map[string]map[string]struct{}) {
 		}
 	}
 	fatalOnError(scanner.Err())
+	for i := 0; i < 2; i++ {
+		inf := []string{}
+		for k, v := range ret[i] {
+			l := len(v)
+			if l > 1 {
+				vs := []string{}
+				for k2 := range v {
+					vs = append(vs, "'"+k2+"'")
+				}
+				sort.Strings(vs)
+				inf = append(inf, fmt.Sprintf("Key has %d values: '%s' -> %s", l, k, strings.Join(vs, " ")))
+			}
+		}
+		sort.Strings(inf)
+		fmt.Printf("%s\n", strings.Join(inf, "\n"))
+	}
+	// Check for correlations
+	for i := 0; i < 2; i++ {
+		j := 1 - i
+		for k, m := range ret[i] {
+			for v := range m {
+				m2 := ret[j][v]
+				for v2 := range m2 {
+					if k != v2 {
+						_, ok := ret[2][k]
+						if !ok {
+							ret[2][k] = make(map[string]struct{})
+						}
+						ret[2][k][v2] = struct{}{}
+						_, ok = ret[2][v2]
+						if !ok {
+							ret[2][v2] = make(map[string]struct{})
+						}
+						ret[2][v2][k] = struct{}{}
+						// fmt.Printf("%s <-> %s\n", k, v2)
+					}
+				}
+			}
+		}
+	}
 	return
 }
 
@@ -121,8 +164,11 @@ func importMapfiles(db *sql.DB, mailMap, orgMap string) error {
 		fmt.Printf("Number of profiles present in database: %d\n", n)
 	}
 	data := readMailMapFile(mailMap)
-	fmt.Printf("Names => Emails:\n%+v\n", data[0])
-	fmt.Printf("Emails => Names:\n%+v\n", data[0])
+	if dbg {
+		fmt.Printf("Names => Emails:\n%+v\n", data[0])
+		fmt.Printf("Emails => Names:\n%+v\n", data[1])
+		fmt.Printf("Correlations:\n%+v\n", data[2])
+	}
 	/* profiles
 	+--------------+--------------+------+-----+---------+-------+
 	| Field        | Type         | Null | Key | Default | Extra |
