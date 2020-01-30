@@ -28,13 +28,13 @@ func fatalf(f string, a ...interface{}) {
 }
 
 func readOrgMapFile(fn string, uMap [3]map[string]map[string]struct{}) (comps, users [2]map[string]string, affs [2]map[[2]string]map[[2]string]struct{}) {
-	// comps names -> emails
+	// comps name -> email
 	comps[0] = make(map[string]string)
-	// comps emails -> names
+	// comps email -> name
 	comps[1] = make(map[string]string)
-	// users names -> emails
+	// users name -> email
 	users[0] = make(map[string]string)
-	// users emails -> names
+	// users email -> name
 	users[1] = make(map[string]string)
 	// affs company -> users
 	affs[0] = make(map[[2]string]map[[2]string]struct{})
@@ -179,13 +179,37 @@ func readOrgMapFile(fn string, uMap [3]map[string]map[string]struct{}) (comps, u
 	}
 	sort.Strings(inf)
 	fmt.Printf("%s\n", strings.Join(inf, "\n"))
+	for usr := range affs[1] {
+		userName := usr[0]
+		userEmail := usr[1]
+		names, okNames := uMap[1][userEmail]
+		emails, okEmails := uMap[0][userName]
+		if !okNames || !okEmails {
+			nameCorrels, okNameCorels := uMap[2][userName]
+			emailCorrels, okEmailCorels := uMap[2][userEmail]
+			if okNameCorels || okEmailCorels {
+				fmt.Printf("Found by correlations (%s,%s) -> ((%v,%v),(%v,%v)) -> ((%v,%v),(%v,%v))\n", userName, userEmail, names, okNames, emails, okEmails, nameCorrels, okNameCorels, emailCorrels, okEmailCorels)
+			}
+		}
+		/*
+			if !okNames && okEmails {
+				fmt.Printf("nE (%s,%s) -> ((%v,%v),(%v,%v))\n", userName, userEmail, names, okNames, emails, okEmails)
+			}
+			if okNames && !okEmails {
+				fmt.Printf("Ne (%s,%s) -> ((%v,%v),(%v,%v))\n", userName, userEmail, names, okNames, emails, okEmails)
+			}
+			if !okNames && !okEmails {
+				fmt.Printf("ne (%s,%s) -> ((%v,%v),(%v,%v))\n", userName, userEmail, names, okNames, emails, okEmails)
+			}
+		*/
+	}
 	return
 }
 
 func readMailMapFile(fn string) (ret [3]map[string]map[string]struct{}) {
-	// names -> emails
+	// name -> emails
 	ret[0] = make(map[string]map[string]struct{})
-	// emails -> names
+	// email -> names
 	ret[1] = make(map[string]map[string]struct{})
 	// correlations
 	ret[2] = make(map[string]map[string]struct{})
