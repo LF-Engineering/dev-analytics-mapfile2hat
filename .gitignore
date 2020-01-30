@@ -16,4 +16,11 @@
 
 # VIM
 *.swp
+
+# Sensitive SQLs and map files
 sortinghat.sql
+.organizationmap
+.mailmap
+
+# Go binary
+mapfile2hat

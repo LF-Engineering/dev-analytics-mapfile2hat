@@ -9,3 +9,4 @@ Import .mailmap and .organizationmap files into SortingHat
 - If `FULL=1` is specified, SortingHat database will be created from gitignored populated `sortinghat.sql` file instead of an empty structure file `structure.sql`.
 - To drop SortingHat database & user (just an util script): `USR=root PASS=rootpwd SH_USR=shusername SH_DB=shdb ./mariadb_init.sh`.
 - Connect to SortingHat database via: `SH_USR=shusername SH_PASS=shpwd SH_DB=shdb ./mariadb_sortinghat_shell.sh` to test SortingHat database connection.
+- To import data form `` and `` files do: `SH_USR=shusername SH_PASS=shpwd SH_DB=shdb SH_PORT=13306 [DEBUG=1] ./mapfile2hat .mailmap .organizationmap`
