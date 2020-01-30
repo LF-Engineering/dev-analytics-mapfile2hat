@@ -14,6 +14,12 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
+type affData struct {
+	Names  []string
+	Emails []string
+	Org    [2]string
+}
+
 func fatalOnError(err error) {
 	if err != nil {
 		tm := time.Now()
@@ -27,7 +33,12 @@ func fatalf(f string, a ...interface{}) {
 	fatalOnError(fmt.Errorf(f, a...))
 }
 
-func readOrgMapFile(fn string, uMap [3]map[string]map[string]struct{}) (comps, users [2]map[string]string, affs [2]map[[2]string]map[[2]string]struct{}) {
+func readOrgMapFile(dbg bool, fn string, uMap [3]map[string]map[string]struct{}) (result []affData) {
+	var (
+		comps [2]map[string]string
+		users [2]map[string]string
+		affs  [2]map[[2]string]map[[2]string]struct{}
+	)
 	// comps name -> email
 	comps[0] = make(map[string]string)
 	// comps email -> name
@@ -178,7 +189,9 @@ func readOrgMapFile(fn string, uMap [3]map[string]map[string]struct{}) (comps, u
 		}
 	}
 	sort.Strings(inf)
-	fmt.Printf("%s\n", strings.Join(inf, "\n"))
+	if dbg {
+		fmt.Printf("%s\n", strings.Join(inf, "\n"))
+	}
 	for usr, data := range affs[1] {
 		userName := usr[0]
 		userEmail := usr[1]
@@ -225,12 +238,15 @@ func readOrgMapFile(fn string, uMap [3]map[string]map[string]struct{}) (comps, u
 			company = c
 			break
 		}
-		fmt.Printf("(%d:%v,%d:%v) -> %v\n", len(aNames), aNames, len(aEmails), aEmails, company)
+		if dbg {
+			fmt.Printf("(%d:%v,%d:%v) -> %v\n", len(aNames), aNames, len(aEmails), aEmails, company)
+		}
+		result = append(result, affData{Names: aNames, Emails: aEmails, Org: company})
 	}
 	return
 }
 
-func readMailMapFile(fn string) (ret [3]map[string]map[string]struct{}) {
+func readMailMapFile(dbg bool, fn string) (ret [3]map[string]map[string]struct{}) {
 	// name -> emails
 	ret[0] = make(map[string]map[string]struct{})
 	// email -> names
@@ -323,7 +339,9 @@ func readMailMapFile(fn string) (ret [3]map[string]map[string]struct{}) {
 			}
 		}
 		sort.Strings(inf)
-		fmt.Printf("%s\n", strings.Join(inf, "\n"))
+		if dbg {
+			fmt.Printf("%s\n", strings.Join(inf, "\n"))
+		}
 	}
 	// Check for correlations
 	for i := 0; i < 2; i++ {
@@ -336,7 +354,9 @@ func readMailMapFile(fn string) (ret [3]map[string]map[string]struct{}) {
 						// to have correlate only by email, name is not that unique user "if i == 1 {"
 						// current condition means that we want all correlations
 						if i < 2 {
-							//fmt.Printf("%s <-- %s --> %s\n", k, v, v2)
+							if dbg {
+								fmt.Printf("Correlation %s <-- %s --> %s\n", k, v, v2)
+							}
 							_, ok := ret[2][k]
 							if !ok {
 								ret[2][k] = make(map[string]struct{})
@@ -370,16 +390,14 @@ func importMapfiles(db *sql.DB, mailMap, orgMap string) error {
 		fatalOnError(rows.Close())
 		fmt.Printf("Number of profiles present in database: %d\n", n)
 	}
-	uData := readMailMapFile(mailMap)
+	uData := readMailMapFile(dbg, mailMap)
 	if dbg {
 		fmt.Printf("Names => Emails:\n%+v\n", uData[0])
 		fmt.Printf("Emails => Names:\n%+v\n", uData[1])
 		fmt.Printf("Correlations:\n%+v\n", uData[2])
 	}
-	cData, uuData, affs := readOrgMapFile(orgMap, uData)
+	affs := readOrgMapFile(dbg, orgMap, uData)
 	if dbg {
-		fmt.Printf("Comps:\n%+v\n", cData)
-		fmt.Printf("Users:\n%+v\n", uuData)
 		fmt.Printf("Affs:\n%+v\n", affs)
 	}
 	/* profiles
@@ -487,10 +505,13 @@ func main() {
 		fmt.Printf("Arguments required: mail_mapfile org_mapfile\n")
 		return
 	}
+	dtStart := time.Now()
 	var db *sql.DB
 	dsn := getConnectString("SH_")
 	db, err := sql.Open("mysql", dsn)
 	fatalOnError(err)
 	defer func() { fatalOnError(db.Close()) }()
 	fatalOnError(importMapfiles(db, os.Args[1], os.Args[2]))
+	dtEnd := time.Now()
+	fmt.Printf("Time(%s): %v\n", os.Args[0], dtEnd.Sub(dtStart))
 }
