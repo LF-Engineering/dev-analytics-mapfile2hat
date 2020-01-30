@@ -27,7 +27,19 @@ func fatalf(f string, a ...interface{}) {
 	fatalOnError(fmt.Errorf(f, a...))
 }
 
-func readOrgMapFile(fn string, uMap [3]map[string]map[string]struct{}) bool {
+func readOrgMapFile(fn string, uMap [3]map[string]map[string]struct{}) (comps, users [2]map[string]string, affs [2]map[[2]string]map[[2]string]struct{}) {
+	// comps names -> emails
+	comps[0] = make(map[string]string)
+	// comps emails -> names
+	comps[1] = make(map[string]string)
+	// users names -> emails
+	users[0] = make(map[string]string)
+	// users emails -> names
+	users[1] = make(map[string]string)
+	// affs company -> users
+	affs[0] = make(map[[2]string]map[[2]string]struct{})
+	// affs user -> companies
+	affs[1] = make(map[[2]string]map[[2]string]struct{})
 	f, err := os.Open(fn)
 	fatalOnError(err)
 	defer func() {
@@ -46,6 +58,10 @@ func readOrgMapFile(fn string, uMap [3]map[string]map[string]struct{}) bool {
 		name := ""
 		emails := make(map[string]struct{})
 		objIdx := 0
+		compEmail := ""
+		userEmail := ""
+		compName := ""
+		userName := ""
 		for i, token := range ary {
 			if strings.HasPrefix(token, "<") {
 				if name == "" {
@@ -61,7 +77,23 @@ func readOrgMapFile(fn string, uMap [3]map[string]map[string]struct{}) bool {
 				if le > 1 {
 					fatalf("read more than 1 email: %+v for name: %s: '%s'\n", emails, name, txt)
 				}
-				fmt.Printf("%v: %s, finishing on token: %s\n", emails, name, token)
+				// fmt.Printf("%v: %s, finishing on token: %s\n", emails, name, token)
+				email := ""
+				for em := range emails {
+					email = em
+					break
+				}
+				if objIdx == 0 {
+					comps[0][name] = email
+					comps[1][email] = name
+					compEmail = email
+					compName = name
+				} else {
+					users[0][name] = email
+					users[1][email] = name
+					userEmail = email
+					userName = name
+				}
 				objIdx++
 				name = ""
 				emails = make(map[string]struct{})
@@ -77,7 +109,23 @@ func readOrgMapFile(fn string, uMap [3]map[string]map[string]struct{}) bool {
 			if le > 1 {
 				fatalf("read more than 1 email: %+v for name: %s: '%s'\n", emails, name, txt)
 			}
-			fmt.Printf("%v: %s, finished\n", emails, name)
+			// fmt.Printf("%v: %s, finished\n", emails, name)
+			email := ""
+			for em := range emails {
+				email = em
+				break
+			}
+			if objIdx == 0 {
+				comps[0][name] = email
+				comps[1][email] = name
+				compEmail = email
+				compName = name
+			} else {
+				users[0][name] = email
+				users[1][email] = name
+				userEmail = email
+				userName = name
+			}
 			objIdx++
 			name = ""
 			emails = make(map[string]struct{})
@@ -87,9 +135,51 @@ func readOrgMapFile(fn string, uMap [3]map[string]map[string]struct{}) bool {
 		if objIdx != 2 {
 			fatalf("read more than 2 name-email(s) assignments: '%s'\n", txt)
 		}
+		u := [2]string{userName, userEmail}
+		c := [2]string{compName, compEmail}
+		_, ok := affs[0][c]
+		if !ok {
+			affs[0][c] = make(map[[2]string]struct{})
+		}
+		affs[0][c][u] = struct{}{}
+		_, ok = affs[1][u]
+		if !ok {
+			affs[1][u] = make(map[[2]string]struct{})
+		}
+		affs[1][u][c] = struct{}{}
 	}
 	fatalOnError(scanner.Err())
-	return true
+	inf := []string{}
+	/*
+		fmt.Printf("comp -> users\n")
+		for k, v := range affs[0] {
+			fmt.Printf("%v: %v\n", k, v)
+		}
+		fmt.Printf("user -> comps\n")
+		for k, v := range affs[1] {
+			fmt.Printf("%v: %v\n", k, v)
+		}
+	*/
+	for i := 0; i < 2; i++ {
+		for k, v := range affs[i] {
+			l := len(v)
+			if l > 1 {
+				vs := []string{}
+				for k2 := range v {
+					vs = append(vs, "'"+k2[0]+","+k2[1]+"'")
+				}
+				sort.Strings(vs)
+				msg := fmt.Sprintf("Key has %d values: '%s' -> %s", l, k, strings.Join(vs, " "))
+				if i == 1 {
+					fatalf(msg)
+				}
+				inf = append(inf, msg)
+			}
+		}
+	}
+	sort.Strings(inf)
+	fmt.Printf("%s\n", strings.Join(inf, "\n"))
+	return
 }
 
 func readMailMapFile(fn string) (ret [3]map[string]map[string]struct{}) {
@@ -234,9 +324,11 @@ func importMapfiles(db *sql.DB, mailMap, orgMap string) error {
 		fmt.Printf("Emails => Names:\n%+v\n", uData[1])
 		fmt.Printf("Correlations:\n%+v\n", uData[2])
 	}
-	oData := readOrgMapFile(orgMap, uData)
+	cData, uuData, affs := readOrgMapFile(orgMap, uData)
 	if dbg {
-		fmt.Printf("Orgs:\n%+v\n", oData)
+		fmt.Printf("Comps:\n%+v\n", cData)
+		fmt.Printf("Users:\n%+v\n", uuData)
+		fmt.Printf("Affs:\n%+v\n", affs)
 	}
 	/* profiles
 	+--------------+--------------+------+-----+---------+-------+
