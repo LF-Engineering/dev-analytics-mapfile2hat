@@ -27,6 +27,27 @@ func fatalf(f string, a ...interface{}) {
 	fatalOnError(fmt.Errorf(f, a...))
 }
 
+func readOrgMapFile(fn string, uMap [3]map[string]map[string]struct{}) bool {
+	f, err := os.Open(fn)
+	fatalOnError(err)
+	defer func() {
+		_ = f.Close()
+	}()
+	space := regexp.MustCompile(`\s+`)
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		txt := strings.TrimSpace(scanner.Text())
+		if txt == "" || strings.HasPrefix(txt, "#") {
+			continue
+		}
+		txt = strings.Replace(txt, ",", " ", -1)
+		txt = space.ReplaceAllString(txt, " ")
+		fmt.Printf("%s\n", txt)
+	}
+	fatalOnError(scanner.Err())
+	return true
+}
+
 func readMailMapFile(fn string) (ret [3]map[string]map[string]struct{}) {
 	// names -> emails
 	ret[0] = make(map[string]map[string]struct{})
@@ -140,7 +161,7 @@ func readMailMapFile(fn string) (ret [3]map[string]map[string]struct{}) {
 							ret[2][v2] = make(map[string]struct{})
 						}
 						ret[2][v2][k] = struct{}{}
-						// fmt.Printf("%s <-> %s\n", k, v2)
+						//fmt.Printf("%s <-> %s\n", k, v2)
 					}
 				}
 			}
@@ -163,11 +184,15 @@ func importMapfiles(db *sql.DB, mailMap, orgMap string) error {
 		fatalOnError(rows.Close())
 		fmt.Printf("Number of profiles present in database: %d\n", n)
 	}
-	data := readMailMapFile(mailMap)
+	uData := readMailMapFile(mailMap)
 	if dbg {
-		fmt.Printf("Names => Emails:\n%+v\n", data[0])
-		fmt.Printf("Emails => Names:\n%+v\n", data[1])
-		fmt.Printf("Correlations:\n%+v\n", data[2])
+		fmt.Printf("Names => Emails:\n%+v\n", uData[0])
+		fmt.Printf("Emails => Names:\n%+v\n", uData[1])
+		fmt.Printf("Correlations:\n%+v\n", uData[2])
+	}
+	oData := readOrgMapFile(orgMap, uData)
+	if dbg {
+		fmt.Printf("Orgs:\n%+v\n", oData)
 	}
 	/* profiles
 	+--------------+--------------+------+-----+---------+-------+
