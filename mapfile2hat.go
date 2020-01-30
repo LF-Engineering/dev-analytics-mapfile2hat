@@ -42,7 +42,51 @@ func readOrgMapFile(fn string, uMap [3]map[string]map[string]struct{}) bool {
 		}
 		txt = strings.Replace(txt, ",", " ", -1)
 		txt = space.ReplaceAllString(txt, " ")
-		fmt.Printf("%s\n", txt)
+		ary := strings.Split(txt, " ")
+		name := ""
+		emails := make(map[string]struct{})
+		objIdx := 0
+		for i, token := range ary {
+			if strings.HasPrefix(token, "<") {
+				if name == "" {
+					fmt.Printf("i=%d token='%s' name='%s', emails=%+v\n", i, token, name, emails)
+					fatalf("line: '%s'", txt)
+				}
+				email := strings.TrimSpace(token[1 : len(token)-1])
+				emails[email] = struct{}{}
+				continue
+			}
+			le := len(emails)
+			if le > 0 {
+				if le > 1 {
+					fatalf("read more than 1 email: %+v for name: %s: '%s'\n", emails, name, txt)
+				}
+				fmt.Printf("%v: %s, finishing on token: %s\n", emails, name, token)
+				objIdx++
+				name = ""
+				emails = make(map[string]struct{})
+			}
+			if name == "" {
+				name = token
+				continue
+			}
+			name += " " + token
+		}
+		le := len(emails)
+		if le > 0 {
+			if le > 1 {
+				fatalf("read more than 1 email: %+v for name: %s: '%s'\n", emails, name, txt)
+			}
+			fmt.Printf("%v: %s, finished\n", emails, name)
+			objIdx++
+			name = ""
+			emails = make(map[string]struct{})
+		} else {
+			fatalf("line '%s' ending on username, missing email(s)", txt)
+		}
+		if objIdx != 2 {
+			fatalf("read more than 2 name-email(s) assignments: '%s'\n", txt)
+		}
 	}
 	fatalOnError(scanner.Err())
 	return true
