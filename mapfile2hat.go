@@ -179,29 +179,53 @@ func readOrgMapFile(fn string, uMap [3]map[string]map[string]struct{}) (comps, u
 	}
 	sort.Strings(inf)
 	fmt.Printf("%s\n", strings.Join(inf, "\n"))
-	for usr := range affs[1] {
+	for usr, data := range affs[1] {
 		userName := usr[0]
 		userEmail := usr[1]
 		names, okNames := uMap[1][userEmail]
 		emails, okEmails := uMap[0][userName]
-		if !okNames || !okEmails {
-			nameCorrels, okNameCorels := uMap[2][userName]
-			emailCorrels, okEmailCorels := uMap[2][userEmail]
-			if okNameCorels || okEmailCorels {
-				fmt.Printf("Found by correlations (%s,%s) -> ((%v,%v),(%v,%v)) -> ((%v,%v),(%v,%v))\n", userName, userEmail, names, okNames, emails, okEmails, nameCorrels, okNameCorels, emailCorrels, okEmailCorels)
+		uEmails := make(map[string]struct{})
+		uNames := make(map[string]struct{})
+		uNames[userName] = struct{}{}
+		if okNames {
+			for name := range names {
+				uNames[name] = struct{}{}
 			}
 		}
-		/*
-			if !okNames && okEmails {
-				fmt.Printf("nE (%s,%s) -> ((%v,%v),(%v,%v))\n", userName, userEmail, names, okNames, emails, okEmails)
+		uEmails[userEmail] = struct{}{}
+		if okEmails {
+			for email := range emails {
+				uEmails[email] = struct{}{}
 			}
-			if okNames && !okEmails {
-				fmt.Printf("Ne (%s,%s) -> ((%v,%v),(%v,%v))\n", userName, userEmail, names, okNames, emails, okEmails)
+		}
+		nameCorrels, okNameCorels := uMap[2][userName]
+		emailCorrels, okEmailCorels := uMap[2][userEmail]
+		if okNameCorels {
+			//fmt.Printf("N Found by correlations (%s,%s) -> ((%v,%v),(%v,%v)) -> ((%v,%v),(%v,%v))\n", userName, userEmail, names, okNames, emails, okEmails, nameCorrels, okNameCorels, emailCorrels, okEmailCorels)
+			for name := range nameCorrels {
+				uNames[name] = struct{}{}
 			}
-			if !okNames && !okEmails {
-				fmt.Printf("ne (%s,%s) -> ((%v,%v),(%v,%v))\n", userName, userEmail, names, okNames, emails, okEmails)
+		}
+		if okEmailCorels {
+			//fmt.Printf("E Found by correlations (%s,%s) -> ((%v,%v),(%v,%v)) -> ((%v,%v),(%v,%v))\n", userName, userEmail, names, okNames, emails, okEmails, nameCorrels, okNameCorels, emailCorrels, okEmailCorels)
+			for email := range emailCorrels {
+				uEmails[email] = struct{}{}
 			}
-		*/
+		}
+		aEmails := []string{}
+		for email := range uEmails {
+			aEmails = append(aEmails, email)
+		}
+		aNames := []string{}
+		for name := range uNames {
+			aNames = append(aNames, name)
+		}
+		company := [2]string{}
+		for c := range data {
+			company = c
+			break
+		}
+		fmt.Printf("(%d:%v,%d:%v) -> %v\n", len(aNames), aNames, len(aEmails), aEmails, company)
 	}
 	return
 }
@@ -309,17 +333,21 @@ func readMailMapFile(fn string) (ret [3]map[string]map[string]struct{}) {
 				m2 := ret[j][v]
 				for v2 := range m2 {
 					if k != v2 {
-						_, ok := ret[2][k]
-						if !ok {
-							ret[2][k] = make(map[string]struct{})
+						// to have correlate only by email, name is not that unique user "if i == 1 {"
+						// current condition means that we want all correlations
+						if i < 2 {
+							//fmt.Printf("%s <-- %s --> %s\n", k, v, v2)
+							_, ok := ret[2][k]
+							if !ok {
+								ret[2][k] = make(map[string]struct{})
+							}
+							ret[2][k][v2] = struct{}{}
+							_, ok = ret[2][v2]
+							if !ok {
+								ret[2][v2] = make(map[string]struct{})
+							}
+							ret[2][v2][k] = struct{}{}
 						}
-						ret[2][k][v2] = struct{}{}
-						_, ok = ret[2][v2]
-						if !ok {
-							ret[2][v2] = make(map[string]struct{})
-						}
-						ret[2][v2][k] = struct{}{}
-						//fmt.Printf("%s <-> %s\n", k, v2)
 					}
 				}
 			}
