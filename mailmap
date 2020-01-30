@@ -1,0 +1,2 @@
+a b c <d@e.f> g h <i@j.k> <l@m.n> o <p@q.r>
+a <d@e.f>  b c <i@j.k> <l@m.n> d e f <p@q.r> <x@y.z>

@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"database/sql"
 	"fmt"
 	"os"
+	"regexp"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -21,6 +24,151 @@ func fatalOnError(err error) {
 
 func fatalf(f string, a ...interface{}) {
 	fatalOnError(fmt.Errorf(f, a...))
+}
+
+func readMailMapFile(fn string) (ret [2]map[string]map[string]struct{}) {
+	// names -> emails
+	ret[0] = make(map[string]map[string]struct{})
+	// emails -> names
+	ret[1] = make(map[string]map[string]struct{})
+	f, err := os.Open(fn)
+	fatalOnError(err)
+	defer func() {
+		_ = f.Close()
+	}()
+	space := regexp.MustCompile(`\s+`)
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		txt := strings.TrimSpace(scanner.Text())
+		if txt == "" || strings.HasPrefix(txt, "#") {
+			continue
+		}
+		txt = strings.Replace(txt, ",", " ", -1)
+		txt = space.ReplaceAllString(txt, " ")
+		// fmt.Printf("%s\n", txt)
+		ary := strings.Split(txt, " ")
+		name := ""
+		emails := make(map[string]struct{})
+		for i, token := range ary {
+			if strings.HasPrefix(token, "<") {
+				if name == "" {
+					fmt.Printf("i=%d token='%s' name='%s', emails=%+v\n", i, token, name, emails)
+					fatalf("line: '%s'", txt)
+				}
+				email := strings.TrimSpace(token[1 : len(token)-1])
+				emails[email] = struct{}{}
+				continue
+			}
+			if len(emails) > 0 {
+				_, ok := ret[0][name]
+				if !ok {
+					ret[0][name] = make(map[string]struct{})
+				}
+				for email := range emails {
+					_, ok := ret[1][email]
+					if !ok {
+						ret[1][email] = make(map[string]struct{})
+					}
+					ret[0][name][email] = struct{}{}
+					ret[1][email][name] = struct{}{}
+				}
+				// fmt.Printf("%v: %s, finishing on token: %s\n", emails, name, token)
+				name = ""
+				emails = make(map[string]struct{})
+			}
+			if name == "" {
+				name = token
+				continue
+			}
+			name += " " + token
+		}
+		if len(emails) > 0 {
+			_, ok := ret[0][name]
+			if !ok {
+				ret[0][name] = make(map[string]struct{})
+			}
+			for email := range emails {
+				_, ok := ret[1][email]
+				if !ok {
+					ret[1][email] = make(map[string]struct{})
+				}
+				ret[0][name][email] = struct{}{}
+				ret[1][email][name] = struct{}{}
+			}
+			// fmt.Printf("%v: %s, finished\n", emails, name)
+			name = ""
+			emails = make(map[string]struct{})
+		} else {
+			fmt.Printf("WARNING: line '%s' ending on username, missing email(s)\n", txt)
+		}
+	}
+	fatalOnError(scanner.Err())
+	return
+}
+
+func importMapfiles(db *sql.DB, mailMap, orgMap string) error {
+	dbg := os.Getenv("DEBUG") != ""
+	if dbg {
+		fmt.Printf("Importing data from %s, %s files\n", mailMap, orgMap)
+		rows, err := db.Query("select count(*) from profiles")
+		fatalOnError(err)
+		n := 0
+		for rows.Next() {
+			fatalOnError(rows.Scan(&n))
+		}
+		fatalOnError(rows.Err())
+		fatalOnError(rows.Close())
+		fmt.Printf("Number of profiles present in database: %d\n", n)
+	}
+	data := readMailMapFile(mailMap)
+	fmt.Printf("Names => Emails:\n%+v\n", data[0])
+	fmt.Printf("Emails => Names:\n%+v\n", data[0])
+	/* profiles
+	+--------------+--------------+------+-----+---------+-------+
+	| Field        | Type         | Null | Key | Default | Extra |
+	+--------------+--------------+------+-----+---------+-------+
+	| uuid         | varchar(128) | NO   | PRI | NULL    |       |
+	| name         | varchar(128) | YES  |     | NULL    |       |
+	| email        | varchar(128) | YES  |     | NULL    |       |
+	| gender       | varchar(32)  | YES  |     | NULL    |       |
+	| gender_acc   | int(11)      | YES  |     | NULL    |       |
+	| is_bot       | tinyint(1)   | YES  |     | NULL    |       |
+	| country_code | varchar(2)   | YES  | MUL | NULL    |       |
+	+--------------+--------------+------+-----+---------+-------+
+	*/
+	/* identities
+	+---------------+--------------+------+-----+---------+-------+
+	| Field         | Type         | Null | Key | Default | Extra |
+	+---------------+--------------+------+-----+---------+-------+
+	| id            | varchar(128) | NO   | PRI | NULL    |       |
+	| name          | varchar(128) | YES  | MUL | NULL    |       |
+	| email         | varchar(128) | YES  |     | NULL    |       |
+	| username      | varchar(128) | YES  |     | NULL    |       |
+	| source        | varchar(32)  | NO   |     | NULL    |       |
+	| uuid          | varchar(128) | YES  | MUL | NULL    |       |
+	| last_modified | datetime(6)  | YES  |     | NULL    |       |
+	+---------------+--------------+------+-----+---------+-------+
+	*/
+	/* organizations
+	+-------+--------------+------+-----+---------+----------------+
+	| Field | Type         | Null | Key | Default | Extra          |
+	+-------+--------------+------+-----+---------+----------------+
+	| id    | int(11)      | NO   | PRI | NULL    | auto_increment |
+	| name  | varchar(191) | NO   | UNI | NULL    |                |
+	+-------+--------------+------+-----+---------+----------------+
+	*/
+	/* enrollments
+	+-----------------+--------------+------+-----+---------+----------------+
+	| Field           | Type         | Null | Key | Default | Extra          |
+	+-----------------+--------------+------+-----+---------+----------------+
+	| id              | int(11)      | NO   | PRI | NULL    | auto_increment |
+	| start           | datetime     | NO   |     | NULL    |                |
+	| end             | datetime     | NO   |     | NULL    |                |
+	| uuid            | varchar(128) | NO   | MUL | NULL    |                |
+	| organization_id | int(11)      | NO   | MUL | NULL    |                |
+	+-----------------+--------------+------+-----+---------+----------------+
+	*/
+	return nil
 }
 
 // getConnectString - get MariaDB SH (Sorting Hat) database DSN
@@ -74,28 +222,16 @@ func getConnectString(prefix string) string {
 	return dsn
 }
 
-func importMapfiles(db *sql.DB) error {
-	dbg := os.Getenv("DEBUG") != ""
-	if dbg {
-		rows, err := db.Query("select count(*) from profiles")
-		fatalOnError(err)
-		n := 0
-		for rows.Next() {
-			fatalOnError(rows.Scan(&n))
-		}
-		fatalOnError(rows.Err())
-		fatalOnError(rows.Close())
-		fmt.Printf("Number of profiles present in database: %d\n", n)
-	}
-	return nil
-}
-
 func main() {
 	// Connect to MariaDB
+	if len(os.Args) < 3 {
+		fmt.Printf("Arguments required: mail_mapfile org_mapfile\n")
+		return
+	}
 	var db *sql.DB
 	dsn := getConnectString("SH_")
 	db, err := sql.Open("mysql", dsn)
 	fatalOnError(err)
 	defer func() { fatalOnError(db.Close()) }()
-	fatalOnError(importMapfiles(db))
+	fatalOnError(importMapfiles(db, os.Args[1], os.Args[2]))
 }
