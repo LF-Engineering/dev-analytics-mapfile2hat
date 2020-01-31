@@ -26,6 +26,7 @@ type affData struct {
 }
 
 type enrollment struct {
+	UUID  string
 	OrgID int
 	Start time.Time
 	End   time.Time
@@ -473,6 +474,7 @@ func findEnrollments(db *sql.DB, uuid string) (enrollments []enrollment) {
 	)
 	fatalOnError(err)
 	var e enrollment
+	e.UUID = uuid
 	for rows.Next() {
 		fatalOnError(rows.Scan(&e.OrgID, &e.Start, &e.End))
 		enrollments = append(enrollments, e)
@@ -482,8 +484,25 @@ func findEnrollments(db *sql.DB, uuid string) (enrollments []enrollment) {
 	return
 }
 
+func deleteEnrollments(db *sql.DB, uuid string) {
+	_, err := db.Exec("delete from enrollments where uuid = ?", uuid)
+	fatalOnError(err)
+}
+
+func addEnrollment(db *sql.DB, e enrollment) {
+	_, err := db.Exec(
+		"insert into enrollments(uuid, organization_id, start, end) values(?, ?, ?, ?)",
+		e.UUID,
+		e.OrgID,
+		e.Start,
+		e.End,
+	)
+	fatalOnError(err)
+}
+
 func importMapfiles(db *sql.DB, mailMap, orgMap string) error {
 	dbg := os.Getenv("DEBUG") != ""
+	replace := os.Getenv("REPLACE") != ""
 	if dbg {
 		fmt.Printf("Importing data from %s, %s files\n", mailMap, orgMap)
 		rows, err := db.Query("select count(*) from profiles")
@@ -559,22 +578,74 @@ func importMapfiles(db *sql.DB, mailMap, orgMap string) error {
 			skipMap[uuid] = struct{}{}
 		}
 	}
+	dtFmt := "2006-01-02T15:04:05Z"
+	dtStart, e := time.Parse(dtFmt, "1970-01-01T00:00:00Z")
+	fatalOnError(e)
+	dtEnd, e := time.Parse(dtFmt, "2099-01-01T00:00:00Z")
+	fatalOnError(e)
+	eadded := 0
+	skipped := 0
+	same := 0
+	conflicts := 0
+	unaff := 0
+	deleted := 0
 	for _, aff := range affs {
 		comp := aff.Org[0]
 		if comp == unaffiliated {
+			unaff++
 			continue
 		}
 		for _, uuid := range aff.UUIDs {
 			_, ok := skipMap[uuid]
 			if ok {
-				fmt.Printf("WARNING: Skip enrollment for non unique uuid: %s, data: %v\n", uuid, aff)
+				fmt.Printf("WARNING: Skip enrollment for non unique affiliation data %v for uuid: %s, data: %v\n", chk[uuid], uuid, aff)
+				skipped++
+				continue
 			}
 			enrollments := findEnrollments(db, uuid)
 			if dbg {
 				fmt.Printf("%s -> %v\n", uuid, enrollments)
 			}
+			if len(enrollments) > 0 {
+				found := false
+				for i, enrollment := range enrollments {
+					if enrollment.OrgID == aff.OrgID {
+						if dbg {
+							fmt.Printf("Found already correct affiliation(%d): uuid %s with %s/%d\n", i, uuid, comp, aff.OrgID)
+						}
+						found = true
+						break
+					}
+				}
+				if found {
+					same++
+					continue
+				}
+				conflicts++
+				if !replace {
+					if dbg {
+						fmt.Printf("uuid %s already have enrollments %v, replace mode is not set, skipping\n", uuid, enrollments)
+					}
+					continue
+				}
+				deleteEnrollments(db, uuid)
+				deleted++
+				fmt.Printf("Deleted uuid %s existing enrollments %v, replaced with %s/%d\n", uuid, enrollments, comp, aff.OrgID)
+			}
+			addEnrollment(db, enrollment{UUID: uuid, OrgID: aff.OrgID, Start: dtStart, End: dtEnd})
+			eadded++
 		}
 	}
+	fmt.Printf(
+		"Orgs added: %d\nEnrollments added: %d\nSkipped due to non unique uuid mapping: %d\nExisting matching: %d\nConflicts: %d\nUnaffiliated: %d\nDeleted: %d\n",
+		added,
+		eadded,
+		skipped,
+		same,
+		conflicts,
+		unaff,
+		deleted,
+	)
 	/* identities
 	+---------------+--------------+------+-----+---------+-------+
 	| Field         | Type         | Null | Key | Default | Extra |
