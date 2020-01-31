@@ -14,6 +14,9 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
+// unaffiliated - special company name for unaffiliated users
+const unaffiliated string = "Unaffiliated"
+
 type affData struct {
 	Names  []string
 	Emails []string
@@ -409,6 +412,50 @@ func addOrganization(db *sql.DB, company string) int {
 	return id
 }
 
+func findIdentities(db *sql.DB, names, emails []string) (uuids []string) {
+	m := make(map[string]struct{})
+	if len(names) > 0 {
+		query := "select uuid from identities where name in ("
+		args := []interface{}{}
+		for _, name := range names {
+			query += "?,"
+			args = append(args, name)
+		}
+		query = query[:len(query)-1] + ")"
+		rows, err := db.Query(query, args...)
+		fatalOnError(err)
+		uuid := ""
+		for rows.Next() {
+			fatalOnError(rows.Scan(&uuid))
+			m[uuid] = struct{}{}
+		}
+		fatalOnError(rows.Err())
+		fatalOnError(rows.Close())
+	}
+	if len(emails) > 0 {
+		query := "select uuid from identities where email in ("
+		args := []interface{}{}
+		for _, email := range emails {
+			query += "?,"
+			args = append(args, email)
+		}
+		query = query[:len(query)-1] + ")"
+		rows, err := db.Query(query, args...)
+		fatalOnError(err)
+		uuid := ""
+		for rows.Next() {
+			fatalOnError(rows.Scan(&uuid))
+			m[uuid] = struct{}{}
+		}
+		fatalOnError(rows.Err())
+		fatalOnError(rows.Close())
+	}
+	for uuid := range m {
+		uuids = append(uuids, uuid)
+	}
+	return
+}
+
 func importMapfiles(db *sql.DB, mailMap, orgMap string) error {
 	dbg := os.Getenv("DEBUG") != ""
 	if dbg {
@@ -436,15 +483,32 @@ func importMapfiles(db *sql.DB, mailMap, orgMap string) error {
 	comp2id := make(map[string]int)
 	for _, aff := range affs {
 		comp := aff.Org[0]
-		if comp == "Unaffiliated" {
+		if comp == unaffiliated {
 			continue
 		}
 		comp2id[aff.Org[0]] = 0
 	}
-	if dbg {
-		for comp := range comp2id {
-			comp2id[comp] = addOrganization(db, comp)
+	for comp := range comp2id {
+		comp2id[comp] = addOrganization(db, comp)
+		if dbg {
 			fmt.Printf("Org '%s' -> %d\n", comp, comp2id[comp])
+		}
+	}
+	for _, aff := range affs {
+		comp := aff.Org[0]
+		if comp == unaffiliated {
+			continue
+		}
+		names := aff.Names
+		emails := aff.Emails
+		uuids := findIdentities(db, names, emails)
+		if len(uuids) == 0 {
+			fmt.Printf("No identities found for names=%v emails=%v\n", names, emails)
+			continue
+		}
+		compID := comp2id[comp]
+		if dbg {
+			fmt.Printf("Enroll %v to %s/%d\n", uuids, comp, compID)
 		}
 	}
 	/* profiles
