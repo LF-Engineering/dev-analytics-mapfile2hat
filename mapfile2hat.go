@@ -21,6 +21,14 @@ type affData struct {
 	Names  []string
 	Emails []string
 	Org    [2]string
+	UUIDs  []string
+	OrgID  int
+}
+
+type enrollment struct {
+	OrgID int
+	Start time.Time
+	End   time.Time
 }
 
 func fatalOnError(err error) {
@@ -379,8 +387,9 @@ func readMailMapFile(dbg bool, fn string) (ret [3]map[string]map[string]struct{}
 	return
 }
 
-func addOrganization(db *sql.DB, company string) int {
+func addOrganization(db *sql.DB, company string) (int, bool) {
 	_, err := db.Exec("insert into organizations(name) values(?)", company)
+	exists := false
 	if err != nil {
 		if strings.Contains(err.Error(), "Error 1062") {
 			rows, err2 := db.Query("select name from organizations where name = ?", company)
@@ -391,6 +400,7 @@ func addOrganization(db *sql.DB, company string) int {
 			}
 			fatalOnError(rows.Err())
 			fatalOnError(rows.Close())
+			exists = true
 			// fmt.Printf("Warning: name collision: trying to insert '%s', exists: '%s'\n", company, existingName)
 		} else {
 			fatalOnError(err)
@@ -409,7 +419,7 @@ func addOrganization(db *sql.DB, company string) int {
 	if !fetched {
 		fatalf("failed to add '%s' company", company)
 	}
-	return id
+	return id, exists
 }
 
 func findIdentities(db *sql.DB, names, emails []string) (uuids []string) {
@@ -456,6 +466,22 @@ func findIdentities(db *sql.DB, names, emails []string) (uuids []string) {
 	return
 }
 
+func findEnrollments(db *sql.DB, uuid string) (enrollments []enrollment) {
+	rows, err := db.Query(
+		"select organization_id, start, end from enrollments where uuid = ? order by start",
+		uuid,
+	)
+	fatalOnError(err)
+	var e enrollment
+	for rows.Next() {
+		fatalOnError(rows.Scan(&e.OrgID, &e.Start, &e.End))
+		enrollments = append(enrollments, e)
+	}
+	fatalOnError(rows.Err())
+	fatalOnError(rows.Close())
+	return
+}
+
 func importMapfiles(db *sql.DB, mailMap, orgMap string) error {
 	dbg := os.Getenv("DEBUG") != ""
 	if dbg {
@@ -488,13 +514,20 @@ func importMapfiles(db *sql.DB, mailMap, orgMap string) error {
 		}
 		comp2id[aff.Org[0]] = 0
 	}
+	added := 0
+	var exists bool
 	for comp := range comp2id {
-		comp2id[comp] = addOrganization(db, comp)
+		comp2id[comp], exists = addOrganization(db, comp)
+		if !exists {
+			added++
+		}
 		if dbg {
 			fmt.Printf("Org '%s' -> %d\n", comp, comp2id[comp])
 		}
 	}
-	for _, aff := range affs {
+	fmt.Printf("Number of organizations: %d, added new: %d\n", len(comp2id), added)
+	chk := make(map[string][]string)
+	for i, aff := range affs {
 		comp := aff.Org[0]
 		if comp == unaffiliated {
 			continue
@@ -507,23 +540,41 @@ func importMapfiles(db *sql.DB, mailMap, orgMap string) error {
 			continue
 		}
 		compID := comp2id[comp]
-		if dbg {
-			fmt.Printf("Enroll %v to %s/%d\n", uuids, comp, compID)
+		affs[i].UUIDs = uuids
+		affs[i].OrgID = compID
+		for _, uuid := range uuids {
+			comps, ok := chk[uuid]
+			if !ok {
+				comps = []string{}
+				chk[uuid] = comps
+			}
+			comps = append(comps, comp)
+			chk[uuid] = comps
 		}
 	}
-	/* profiles
-	+--------------+--------------+------+-----+---------+-------+
-	| Field        | Type         | Null | Key | Default | Extra |
-	+--------------+--------------+------+-----+---------+-------+
-	| uuid         | varchar(128) | NO   | PRI | NULL    |       |
-	| name         | varchar(128) | YES  |     | NULL    |       |
-	| email        | varchar(128) | YES  |     | NULL    |       |
-	| gender       | varchar(32)  | YES  |     | NULL    |       |
-	| gender_acc   | int(11)      | YES  |     | NULL    |       |
-	| is_bot       | tinyint(1)   | YES  |     | NULL    |       |
-	| country_code | varchar(2)   | YES  | MUL | NULL    |       |
-	+--------------+--------------+------+-----+---------+-------+
-	*/
+	skipMap := make(map[string]struct{})
+	for uuid, comps := range chk {
+		if len(comps) > 1 {
+			fmt.Printf("WARNING: uuid %s would map into multiple companies: %v, skipping\n", uuid, comps)
+			skipMap[uuid] = struct{}{}
+		}
+	}
+	for _, aff := range affs {
+		comp := aff.Org[0]
+		if comp == unaffiliated {
+			continue
+		}
+		for _, uuid := range aff.UUIDs {
+			_, ok := skipMap[uuid]
+			if ok {
+				fmt.Printf("WARNING: Skip enrollment for non unique uuid: %s, data: %v\n", uuid, aff)
+			}
+			enrollments := findEnrollments(db, uuid)
+			if dbg {
+				fmt.Printf("%s -> %v\n", uuid, enrollments)
+			}
+		}
+	}
 	/* identities
 	+---------------+--------------+------+-----+---------+-------+
 	| Field         | Type         | Null | Key | Default | Extra |
