@@ -376,6 +376,39 @@ func readMailMapFile(dbg bool, fn string) (ret [3]map[string]map[string]struct{}
 	return
 }
 
+func addOrganization(db *sql.DB, company string) int {
+	_, err := db.Exec("insert into organizations(name) values(?)", company)
+	if err != nil {
+		if strings.Contains(err.Error(), "Error 1062") {
+			rows, err2 := db.Query("select name from organizations where name = ?", company)
+			fatalOnError(err2)
+			var existingName string
+			for rows.Next() {
+				fatalOnError(rows.Scan(&existingName))
+			}
+			fatalOnError(rows.Err())
+			fatalOnError(rows.Close())
+			// fmt.Printf("Warning: name collision: trying to insert '%s', exists: '%s'\n", company, existingName)
+		} else {
+			fatalOnError(err)
+		}
+	}
+	rows, err := db.Query("select id from organizations where name = ?", company)
+	fatalOnError(err)
+	var id int
+	fetched := false
+	for rows.Next() {
+		fatalOnError(rows.Scan(&id))
+		fetched = true
+	}
+	fatalOnError(rows.Err())
+	fatalOnError(rows.Close())
+	if !fetched {
+		fatalf("failed to add '%s' company", company)
+	}
+	return id
+}
+
 func importMapfiles(db *sql.DB, mailMap, orgMap string) error {
 	dbg := os.Getenv("DEBUG") != ""
 	if dbg {
@@ -399,6 +432,20 @@ func importMapfiles(db *sql.DB, mailMap, orgMap string) error {
 	affs := readOrgMapFile(dbg, orgMap, uData)
 	if dbg {
 		fmt.Printf("Affs:\n%+v\n", affs)
+	}
+	comp2id := make(map[string]int)
+	for _, aff := range affs {
+		comp := aff.Org[0]
+		if comp == "Unaffiliated" {
+			continue
+		}
+		comp2id[aff.Org[0]] = 0
+	}
+	if dbg {
+		for comp := range comp2id {
+			comp2id[comp] = addOrganization(db, comp)
+			fmt.Printf("Org '%s' -> %d\n", comp, comp2id[comp])
+		}
 	}
 	/* profiles
 	+--------------+--------------+------+-----+---------+-------+
