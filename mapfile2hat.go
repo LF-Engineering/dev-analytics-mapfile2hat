@@ -173,16 +173,6 @@ func readOrgMapFile(dbg bool, fn string, uMap [3]map[string]map[string]struct{})
 	}
 	fatalOnError(scanner.Err())
 	inf := []string{}
-	/*
-		fmt.Printf("comp -> users\n")
-		for k, v := range affs[0] {
-			fmt.Printf("%v: %v\n", k, v)
-		}
-		fmt.Printf("user -> comps\n")
-		for k, v := range affs[1] {
-			fmt.Printf("%v: %v\n", k, v)
-		}
-	*/
 	for i := 0; i < 2; i++ {
 		for k, v := range affs[i] {
 			l := len(v)
@@ -646,38 +636,6 @@ func importMapfiles(db *sql.DB, mailMap, orgMap string) error {
 		unaff,
 		deleted,
 	)
-	/* identities
-	+---------------+--------------+------+-----+---------+-------+
-	| Field         | Type         | Null | Key | Default | Extra |
-	+---------------+--------------+------+-----+---------+-------+
-	| id            | varchar(128) | NO   | PRI | NULL    |       |
-	| name          | varchar(128) | YES  | MUL | NULL    |       |
-	| email         | varchar(128) | YES  |     | NULL    |       |
-	| username      | varchar(128) | YES  |     | NULL    |       |
-	| source        | varchar(32)  | NO   |     | NULL    |       |
-	| uuid          | varchar(128) | YES  | MUL | NULL    |       |
-	| last_modified | datetime(6)  | YES  |     | NULL    |       |
-	+---------------+--------------+------+-----+---------+-------+
-	*/
-	/* organizations
-	+-------+--------------+------+-----+---------+----------------+
-	| Field | Type         | Null | Key | Default | Extra          |
-	+-------+--------------+------+-----+---------+----------------+
-	| id    | int(11)      | NO   | PRI | NULL    | auto_increment |
-	| name  | varchar(191) | NO   | UNI | NULL    |                |
-	+-------+--------------+------+-----+---------+----------------+
-	*/
-	/* enrollments
-	+-----------------+--------------+------+-----+---------+----------------+
-	| Field           | Type         | Null | Key | Default | Extra          |
-	+-----------------+--------------+------+-----+---------+----------------+
-	| id              | int(11)      | NO   | PRI | NULL    | auto_increment |
-	| start           | datetime     | NO   |     | NULL    |                |
-	| end             | datetime     | NO   |     | NULL    |                |
-	| uuid            | varchar(128) | NO   | MUL | NULL    |                |
-	| organization_id | int(11)      | NO   | MUL | NULL    |                |
-	+-----------------+--------------+------+-----+---------+----------------+
-	*/
 	return nil
 }
 
