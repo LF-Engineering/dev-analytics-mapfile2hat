@@ -569,9 +569,9 @@ func importMapfiles(db *sql.DB, mailMap, orgMap string) error {
 		}
 	}
 	dtFmt := "2006-01-02T15:04:05Z"
-	dtStart, e := time.Parse(dtFmt, "1970-01-01T00:00:00Z")
+	dtStart, e := time.Parse(dtFmt, "1900-01-01T00:00:00Z")
 	fatalOnError(e)
-	dtEnd, e := time.Parse(dtFmt, "2099-01-01T00:00:00Z")
+	dtEnd, e := time.Parse(dtFmt, "2100-01-01T00:00:00Z")
 	fatalOnError(e)
 	eadded := 0
 	skipped := 0
