@@ -11,11 +11,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LF-Engineering/ssaw/ssawsync"
 	_ "github.com/go-sql-driver/mysql"
 )
 
 // unaffiliated - special company name for unaffiliated users
-const unaffiliated string = "Unaffiliated"
+const (
+	unaffiliated string = "Unaffiliated"
+	cOrigin      string = "bitergia-import-map-file"
+)
 
 type affData struct {
 	Names  []string
@@ -702,9 +706,15 @@ func main() {
 	db, err := sql.Open("mysql", dsn)
 	fatalOnError(err)
 	defer func() { fatalOnError(db.Close()) }()
-	_, err = db.Exec("set @origin = ?", "bitergia-import-map-file")
+	_, err = db.Exec("set @origin = ?", cOrigin)
 	fatalOnError(err)
-	fatalOnError(importMapfiles(db, os.Args[1], os.Args[2]))
+	err = importMapfiles(db, os.Args[1], os.Args[2])
+	// Trigger sync event
+	e := ssawsync.Sync(cOrigin)
+	if e != nil {
+		fmt.Printf("ssaw sync error: %v\n", e)
+	}
+	fatalOnError(err)
 	dtEnd := time.Now()
 	fmt.Printf("Time(%s): %v\n", os.Args[0], dtEnd.Sub(dtStart))
 }
