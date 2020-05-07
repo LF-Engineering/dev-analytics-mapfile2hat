@@ -702,6 +702,8 @@ func main() {
 	db, err := sql.Open("mysql", dsn)
 	fatalOnError(err)
 	defer func() { fatalOnError(db.Close()) }()
+	_, err = db.Exec("set @origin = ?", "bitergia-import-map-file")
+	fatalOnError(err)
 	fatalOnError(importMapfiles(db, os.Args[1], os.Args[2]))
 	dtEnd := time.Now()
 	fmt.Printf("Time(%s): %v\n", os.Args[0], dtEnd.Sub(dtStart))

@@ -12,3 +12,4 @@ Import .mailmap and .organizationmap files into SortingHat
 - To import data form `.mailmap` and `.organizationmap` files do: `[REPLACE=1] SH_USR=shusername SH_PASS=shpwd SH_DB=shdb SH_PORT=13306 [DEBUG=1] ./mapfile2hat .mailmap .organizationmap`
 - If you specify `REPLACE=1` it will delete existing enrollments and insert new ones on conflict.  Otherwise it will not add enrollments if there is a conflict.
 - Typical usage inside MariaDB K8s pods with all env defined by pod: `REPLACE=1 ./mapfile2hat .mailmap .organizationmap`.
+- If using manual `SH_DSN` - remember to add option `parseTime=true`.
