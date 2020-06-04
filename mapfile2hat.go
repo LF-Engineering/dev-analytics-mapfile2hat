@@ -463,7 +463,7 @@ func findIdentities(db *sql.DB, names, emails []string) (uuids []string) {
 
 func findEnrollments(db *sql.DB, uuid string) (enrollments []enrollment) {
 	rows, err := db.Query(
-		"select organization_id, start, end from enrollments where uuid = ? order by start",
+		"select organization_id, start, end from enrollments where uuid = ? and project_slug is null order by start",
 		uuid,
 	)
 	fatalOnError(err)
@@ -479,13 +479,13 @@ func findEnrollments(db *sql.DB, uuid string) (enrollments []enrollment) {
 }
 
 func deleteEnrollments(db *sql.DB, uuid string) {
-	_, err := db.Exec("delete from enrollments where uuid = ?", uuid)
+	_, err := db.Exec("delete from enrollments where uuid = ? and project_slug is null", uuid)
 	fatalOnError(err)
 }
 
 func addEnrollment(db *sql.DB, e enrollment) {
 	_, err := db.Exec(
-		"insert into enrollments(uuid, organization_id, start, end) values(?, ?, ?, ?)",
+		"insert into enrollments(uuid, organization_id, start, end, project_slug) values(?, ?, ?, ?, null)",
 		e.UUID,
 		e.OrgID,
 		e.Start,
